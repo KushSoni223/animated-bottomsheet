@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "outDir": "dist",
+    "rootDir": "src", // ✅ add this line
     "declaration": true,
     "declarationDir": "dist",
     "module": "ESNext",
