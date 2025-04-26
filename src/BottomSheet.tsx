@@ -24,11 +24,9 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   children,
   snapPoints = ["50%"],
 }) => {
-  const translateY = useRef<Animated.Value>(
-    new Animated.Value(SCREEN_HEIGHT)
-  ).current;
-
+  const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const [containerHeight, setContainerHeight] = useState(SCREEN_HEIGHT);
+
   const numericSnapPoints = snapPoints
     .map((p) => {
       const percent = parseFloat(p.replace("%", ""));
@@ -43,12 +41,12 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
       onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 5,
       onPanResponderMove: (_, gestureState) => {
         const value = Math.max(0, gestureState.dy);
-        translateY.setValue(value);
+        translateY.setValue(value + numericSnapPoints[0]);
         lastTranslateY.current = value;
       },
       onPanResponderRelease: (_, gestureState) => {
         const draggedY = gestureState.dy;
-        const endY = draggedY + lastTranslateY.current;
+        const endY = draggedY + numericSnapPoints[0];
 
         if (draggedY > 100) {
           Animated.timing(translateY, {
@@ -91,8 +89,11 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
     setContainerHeight(event.nativeEvent.layout.height);
   };
 
-  return visible ? (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+  return (
+    <View
+      style={StyleSheet.absoluteFill}
+      pointerEvents={visible ? "auto" : "none"}
+    >
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay} />
       </TouchableWithoutFeedback>
@@ -110,7 +111,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
         {children}
       </Animated.View>
     </View>
-  ) : null;
+  );
 };
 
 const styles = StyleSheet.create({
