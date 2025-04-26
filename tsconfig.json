@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src", // ✅ add this line
+    "rootDir": "src",
+    "outDir": "dist/src",
     "declaration": true,
-    "declarationDir": "dist",
+    "declarationDir": "dist/src",
     "module": "ESNext",
     "target": "ES5",
     "moduleResolution": "Node",
