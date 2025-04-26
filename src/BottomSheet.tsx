@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import {
   Animated,
+  Dimensions,
   PanResponder,
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  View,
   StyleSheet,
+  View,
   LayoutChangeEvent,
 } from "react-native";
 
@@ -22,31 +23,59 @@ interface BottomSheetProps {
   children: React.ReactNode;
 }
 
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
+
 export function BottomSheet({
   isOpen,
   toggleSheet,
   snapPoints = ["50%"],
   animationDuration = 300,
-  backgroundColor = "white",
+  backgroundColor = "#fff",
   borderRadius = 16,
   overlayStyle,
   fitContentHeight = false,
   children,
 }: BottomSheetProps) {
-  const screenHeight =
-    useRef<number>(0).current ||
-    require("react-native").Dimensions.get("window").height;
-  const translateY = useRef(new Animated.Value(screenHeight)).current;
+  const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const pan = useRef(new Animated.Value(0)).current;
-  const [sheetHeight, setSheetHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  const numericSnapPoints = snapPoints
-    .map((p) => {
-      const percent = parseFloat(p.replace("%", ""));
-      return screenHeight - (screenHeight * percent) / 100;
-    })
-    .sort((a, b) => a - b);
+  const snapValue = snapPoints.length
+    ? SCREEN_HEIGHT -
+      (parseFloat(snapPoints[0].replace("%", "")) / 100) * SCREEN_HEIGHT
+    : SCREEN_HEIGHT / 2;
+
+  const targetPosition = fitContentHeight
+    ? SCREEN_HEIGHT - contentHeight
+    : snapValue;
+
+  const animateSheet = (open: boolean) => {
+    setIsAnimating(true);
+    Animated.timing(translateY, {
+      toValue: open ? targetPosition : SCREEN_HEIGHT,
+      duration: animationDuration,
+      useNativeDriver: true,
+    }).start(() => {
+      setIsAnimating(false);
+      pan.setValue(0); // reset pan
+    });
+  };
+
+  useEffect(() => {
+    if (fitContentHeight && isOpen && contentHeight === 0) {
+      return; // wait for measuring
+    }
+    animateSheet(isOpen);
+  }, [isOpen, contentHeight]);
+
+  const backdropOpacity = translateY.interpolate({
+    inputRange: [targetPosition, SCREEN_HEIGHT],
+    outputRange: [1, 0],
+    extrapolate: "clamp",
+  });
+
+  const sheetTranslateY = Animated.add(translateY, pan);
 
   const panResponder = PanResponder.create({
     onMoveShouldSetPanResponder: (_, gestureState) =>
@@ -57,7 +86,7 @@ export function BottomSheet({
       }
     },
     onPanResponderRelease: (_, gestureState) => {
-      if (gestureState.dy > (sheetHeight || screenHeight) / 4) {
+      if (gestureState.dy > 100) {
         toggleSheet(false);
       } else {
         Animated.spring(pan, {
@@ -68,58 +97,39 @@ export function BottomSheet({
     },
   });
 
-  const animateSheet = (open: boolean) => {
-    setIsAnimating(true);
-    Animated.timing(translateY, {
-      toValue: open ? numericSnapPoints[0] ?? 0 : screenHeight,
-      duration: animationDuration,
-      useNativeDriver: true,
-    }).start(() => {
-      setIsAnimating(false);
-    });
-  };
-
-  useEffect(() => {
-    animateSheet(isOpen);
-  }, [isOpen]);
-
-  const sheetTranslateY = Animated.add(translateY, pan);
-
-  const backdropOpacity = translateY.interpolate({
-    inputRange: [numericSnapPoints[0] ?? 0, screenHeight],
-    outputRange: [1, 0],
-  });
-
   const handleLayout = (event: LayoutChangeEvent) => {
     const height = event.nativeEvent.layout.height;
-    if (fitContentHeight && height !== sheetHeight) {
-      setSheetHeight(height);
+    if (fitContentHeight) {
+      setContentHeight(height);
     }
   };
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={styles.container}
+      style={StyleSheet.absoluteFill}
+      pointerEvents="box-none"
     >
-      <Animated.View
-        style={[
-          styles.backdrop,
-          overlayStyle,
-          { opacity: backdropOpacity, backgroundColor: "rgba(0,0,0,0.5)" },
-        ]}
-      >
-        <TouchableOpacity
-          style={StyleSheet.absoluteFill}
-          onPress={() => {
-            if (!isAnimating) toggleSheet(false);
-          }}
-        />
-      </Animated.View>
+      {/* Backdrop */}
+      {isOpen && (
+        <Animated.View
+          style={[styles.backdrop, overlayStyle, { opacity: backdropOpacity }]}
+          pointerEvents="auto"
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => {
+              if (!isAnimating) toggleSheet(false);
+            }}
+          />
+        </Animated.View>
+      )}
 
+      {/* Bottom Sheet */}
       <Animated.View
         {...panResponder.panHandlers}
-        onLayout={handleLayout}
+        onLayout={fitContentHeight ? handleLayout : undefined}
         style={[
           styles.sheet,
           {
@@ -129,9 +139,10 @@ export function BottomSheet({
             transform: [{ translateY: sheetTranslateY }],
             minHeight: fitContentHeight
               ? undefined
-              : screenHeight - (numericSnapPoints[0] ?? 0),
+              : SCREEN_HEIGHT - targetPosition,
           },
         ]}
+        pointerEvents="box-none"
       >
         <View style={styles.handle} />
         {children}
@@ -141,21 +152,20 @@ export function BottomSheet({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.5)",
+    zIndex: 1,
   },
   sheet: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
+    zIndex: 2,
     paddingTop: 12,
     paddingHorizontal: 16,
-    paddingBottom: 32,
+    paddingBottom: Platform.OS === "ios" ? 32 : 16,
   },
   handle: {
     width: 40,
