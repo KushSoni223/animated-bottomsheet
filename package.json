@@ -1,0 +1,38 @@
+{
+  "name": "animated-bottomsheet",
+  "version": "1.0.0",
+  "description": "A simple animated bottom sheet component for React Native without reanimated or gesture handler.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": [
+    "react-native",
+    "bottomsheet",
+    "modal",
+    "animation",
+    "ui",
+    "component"
+  ],
+  "author": "Kush Soni",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/animated-bottomsheet"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/animated-bottomsheet/issues"
+  },
+  "homepage": "https://github.com/yourusername/animated-bottomsheet#readme",
+  "peerDependencies": {
+    "react": ">=17.0.0",
+    "react-native": ">=0.64.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.2",
+    "react": "^19.1.0",
+    "react-native": "^0.79.1",
+    "typescript": "^5.8.3"
+  }
+}
