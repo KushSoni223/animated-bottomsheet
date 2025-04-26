@@ -29,7 +29,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 export function BottomSheet({
   isOpen,
   toggleSheet,
-  snapPoints = ["50%"],
+  snapPoints = ["30%", "60%"], // Default to 30% and 60%
   animationDuration = 300,
   backgroundColor = "#fff",
   borderRadius = 16,
@@ -49,15 +49,19 @@ export function BottomSheet({
   const handleWidth = useRef(new Animated.Value(40)).current;
 
   // Parse snap points
-  const parsedSnapPoints = snapPoints.map((point) => {
-    if (point.endsWith("%")) {
-      const percentage = parseFloat(point.replace("%", ""));
-      return SCREEN_HEIGHT - (percentage / 100) * SCREEN_HEIGHT;
-    }
-    return parseFloat(point) || SCREEN_HEIGHT / 2; // Fallback to half screen
-  });
+  const parsedSnapPoints = snapPoints
+    .map((point) => {
+      if (point.endsWith("%")) {
+        const percentage = parseFloat(point.replace("%", ""));
+        return SCREEN_HEIGHT - (percentage / 100) * SCREEN_HEIGHT;
+      }
+      return parseFloat(point) || SCREEN_HEIGHT / 2; // Fallback to half screen
+    })
+    .sort((a, b) => a - b); // Sort ascending for easier logic
 
-  const initialSnap = parsedSnapPoints[0];
+  const initialSnap = parsedSnapPoints[0]; // Lowest snap point (e.g., 60%)
+  const maxSnap = parsedSnapPoints[parsedSnapPoints.length - 1]; // Highest snap point (e.g., 30%)
+  const closeThreshold = SCREEN_HEIGHT * 0.8; // 80% of screen height to close
 
   const animateSheet = (toValue: number, callback?: () => void) => {
     setIsAnimating(true);
@@ -96,7 +100,7 @@ export function BottomSheet({
       return; // Wait for content height measurement
     }
     const targetPosition = fitContentHeight
-      ? Math.max(SCREEN_HEIGHT - contentHeight, parsedSnapPoints[0]) // Ensure not too high
+      ? Math.max(SCREEN_HEIGHT - contentHeight, initialSnap)
       : initialSnap;
     animateSheet(isOpen ? targetPosition : SCREEN_HEIGHT);
   }, [isOpen, contentHeight]);
@@ -104,42 +108,41 @@ export function BottomSheet({
   const sheetTranslateY = Animated.add(translateY, pan);
 
   const backdropOpacity = sheetTranslateY.interpolate({
-    inputRange: [Math.min(...parsedSnapPoints), SCREEN_HEIGHT],
+    inputRange: [maxSnap, SCREEN_HEIGHT],
     outputRange: [0.5, 0],
     extrapolate: "clamp",
   });
 
   const panResponder = PanResponder.create({
     onMoveShouldSetPanResponder: (_, gestureState) => {
-      // Lower threshold for better responsiveness
+      // Allow panning if gesture is significant
       return Math.abs(gestureState.dy) > 2 || Math.abs(gestureState.dx) > 2;
     },
     onPanResponderGrant: () => {
       animateHandle(30); // Shrink handle on drag start
       pan.setValue(0); // Reset pan to avoid jumps
     },
-    onPanResponderMove: Animated.event(
-      [null, { dy: pan }], // Bind gesture dy to pan
-      { useNativeDriver: false }
-    ),
+    onPanResponderMove: Animated.event([null, { dy: pan }], {
+      useNativeDriver: false,
+    }),
     onPanResponderRelease: (_, gestureState) => {
       animateHandle(40); // Expand handle back
       const { vy: velocity, dy: movedDistance } = gestureState;
       const currentPos = translateYValue.current + movedDistance;
 
       // Fast swipe down to close
-      if (velocity > 0.7 || (movedDistance > 100 && velocity >= 0)) {
+      if (velocity > 0.7 || currentPos > closeThreshold) {
         animateSheet(SCREEN_HEIGHT, () => toggleSheet(false));
         return;
       }
-      // Fast swipe up to open fully
-      if (velocity < -0.7) {
-        animateSheet(Math.min(...parsedSnapPoints));
+      // Fast swipe up to max snap point
+      if (velocity < -0.7 && currentPos < maxSnap) {
+        animateSheet(maxSnap);
         return;
       }
 
-      // Snap to nearest point
-      let closestSnap = SCREEN_HEIGHT;
+      // Snap to nearest snap point
+      let closestSnap = initialSnap;
       let minDistance = Infinity;
       parsedSnapPoints.forEach((snap) => {
         const distance = Math.abs(currentPos - snap);
@@ -149,12 +152,7 @@ export function BottomSheet({
         }
       });
 
-      // If close to bottom, dismiss
-      if (closestSnap >= SCREEN_HEIGHT - 50) {
-        animateSheet(SCREEN_HEIGHT, () => toggleSheet(false));
-      } else {
-        animateSheet(closestSnap);
-      }
+      animateSheet(closestSnap);
     },
   });
 
@@ -200,9 +198,7 @@ export function BottomSheet({
             borderTopLeftRadius: borderRadius,
             borderTopRightRadius: borderRadius,
             transform: [{ translateY: sheetTranslateY }],
-            minHeight: fitContentHeight
-              ? undefined
-              : SCREEN_HEIGHT - Math.min(...parsedSnapPoints),
+            minHeight: fitContentHeight ? undefined : SCREEN_HEIGHT - maxSnap,
           },
         ]}
         pointerEvents="auto"
@@ -210,7 +206,7 @@ export function BottomSheet({
         {/* Handle */}
         <Animated.View
           style={[styles.handle, { width: handleWidth }]}
-          {...panResponder.panHandlers} // Allow dragging from handle
+          {...panResponder.panHandlers}
         />
         <View style={styles.content}>{children}</View>
       </Animated.View>
@@ -242,6 +238,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   content: {
-    flexShrink: 1, // Prevent content from overflowing
+    flexShrink: 1,
   },
 });
