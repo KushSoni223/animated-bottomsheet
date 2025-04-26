@@ -1,138 +1,3 @@
-// import React, { useRef, useEffect, useState } from "react";
-// import {
-//   Animated,
-//   Dimensions,
-//   PanResponder,
-//   StyleSheet,
-//   View,
-//   TouchableWithoutFeedback,
-//   LayoutChangeEvent,
-// } from "react-native";
-
-// const SCREEN_HEIGHT = Dimensions.get("window").height;
-
-// interface BottomSheetProps {
-//   visible: boolean;
-//   onClose: () => void;
-//   snapPoints?: string[];
-//   children: React.ReactNode;
-// }
-
-// export const BottomSheet: React.FC<BottomSheetProps> = ({
-//   visible,
-//   onClose,
-//   children,
-//   snapPoints = ["50%"],
-// }) => {
-//   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-//   const [containerHeight, setContainerHeight] = useState(SCREEN_HEIGHT);
-
-//   const numericSnapPoints = snapPoints
-//     .map((p) => {
-//       const percent = parseFloat(p.replace("%", ""));
-//       return SCREEN_HEIGHT - (SCREEN_HEIGHT * percent) / 100;
-//     })
-//     .sort((a, b) => a - b);
-
-//   const lastTranslateY = useRef(0);
-
-//   const panResponder = useRef(
-//     PanResponder.create({
-//       onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 5,
-//       onPanResponderMove: (_, gestureState) => {
-//         const value = Math.max(0, gestureState.dy);
-//         translateY.setValue(value + numericSnapPoints[0]);
-//         lastTranslateY.current = value;
-//       },
-//       onPanResponderRelease: (_, gestureState) => {
-//         const draggedY = gestureState.dy;
-//         const endY = draggedY + numericSnapPoints[0];
-
-//         if (draggedY > 100) {
-//           Animated.timing(translateY, {
-//             toValue: containerHeight,
-//             duration: 300,
-//             useNativeDriver: true,
-//           }).start(onClose);
-//           return;
-//         }
-
-//         const closestSnap = numericSnapPoints.reduce((prev, curr) =>
-//           Math.abs(curr - endY) < Math.abs(prev - endY) ? curr : prev
-//         );
-
-//         Animated.spring(translateY, {
-//           toValue: closestSnap,
-//           useNativeDriver: true,
-//         }).start();
-//       },
-//     })
-//   ).current;
-
-//   useEffect(() => {
-//     if (visible) {
-//       Animated.timing(translateY, {
-//         toValue: numericSnapPoints[0],
-//         duration: 300,
-//         useNativeDriver: true,
-//       }).start();
-//     } else {
-//       Animated.timing(translateY, {
-//         toValue: containerHeight,
-//         duration: 300,
-//         useNativeDriver: true,
-//       }).start();
-//     }
-//   }, [visible]);
-
-//   const handleLayout = (event: LayoutChangeEvent) => {
-//     setContainerHeight(event.nativeEvent.layout.height);
-//   };
-
-//   return (
-//     <View
-//       style={StyleSheet.absoluteFill}
-//       pointerEvents={visible ? "auto" : "none"}
-//     >
-//       <TouchableWithoutFeedback onPress={onClose}>
-//         <View style={styles.overlay} />
-//       </TouchableWithoutFeedback>
-
-//       <Animated.View
-//         {...panResponder.panHandlers}
-//         onLayout={handleLayout}
-//         style={[
-//           styles.sheet,
-//           {
-//             transform: [{ translateY }],
-//           },
-//         ]}
-//       >
-//         {children}
-//       </Animated.View>
-//     </View>
-//   );
-// };
-
-// const styles = StyleSheet.create({
-//   overlay: {
-//     flex: 1,
-//     backgroundColor: "rgba(0,0,0,0.4)",
-//   },
-//   sheet: {
-//     position: "absolute",
-//     bottom: 0,
-//     left: 0,
-//     right: 0,
-//     backgroundColor: "#fff",
-//     borderTopLeftRadius: 20,
-//     borderTopRightRadius: 20,
-//     padding: 16,
-//     minHeight: 200,
-//   },
-// });
-
-// BottomSheet.tsx
 import React, { useState, useEffect, useRef } from "react";
 import {
   Animated,
@@ -142,30 +7,46 @@ import {
   Platform,
   View,
   StyleSheet,
+  LayoutChangeEvent,
 } from "react-native";
 
 interface BottomSheetProps {
   isOpen: boolean;
   toggleSheet: (open: boolean) => void;
+  snapPoints?: string[]; // Example: ['30%', '60%']
+  animationDuration?: number;
   backgroundColor?: string;
   borderRadius?: number;
   overlayStyle?: object;
-  sheetHeight?: number;
+  fitContentHeight?: boolean;
   children: React.ReactNode;
 }
 
 export function BottomSheet({
   isOpen,
   toggleSheet,
-  backgroundColor,
+  snapPoints = ["50%"],
+  animationDuration = 300,
+  backgroundColor = "white",
   borderRadius = 16,
   overlayStyle,
-  sheetHeight = 300,
+  fitContentHeight = false,
   children,
 }: BottomSheetProps) {
-  const progress = useRef(new Animated.Value(isOpen ? 0 : 1)).current;
+  const screenHeight =
+    useRef<number>(0).current ||
+    require("react-native").Dimensions.get("window").height;
+  const translateY = useRef(new Animated.Value(screenHeight)).current;
   const pan = useRef(new Animated.Value(0)).current;
+  const [sheetHeight, setSheetHeight] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
+
+  const numericSnapPoints = snapPoints
+    .map((p) => {
+      const percent = parseFloat(p.replace("%", ""));
+      return screenHeight - (screenHeight * percent) / 100;
+    })
+    .sort((a, b) => a - b);
 
   const panResponder = PanResponder.create({
     onMoveShouldSetPanResponder: (_, gestureState) =>
@@ -176,7 +57,7 @@ export function BottomSheet({
       }
     },
     onPanResponderRelease: (_, gestureState) => {
-      if (gestureState.dy > sheetHeight / 4) {
+      if (gestureState.dy > (sheetHeight || screenHeight) / 4) {
         toggleSheet(false);
       } else {
         Animated.spring(pan, {
@@ -189,9 +70,9 @@ export function BottomSheet({
 
   const animateSheet = (open: boolean) => {
     setIsAnimating(true);
-    Animated.timing(progress, {
-      toValue: open ? 0 : 1,
-      duration: 300,
+    Animated.timing(translateY, {
+      toValue: open ? numericSnapPoints[0] ?? 0 : screenHeight,
+      duration: animationDuration,
       useNativeDriver: true,
     }).start(() => {
       setIsAnimating(false);
@@ -202,27 +83,29 @@ export function BottomSheet({
     animateSheet(isOpen);
   }, [isOpen]);
 
-  const backdropOpacity = progress.interpolate({
-    inputRange: [0, 1],
+  const sheetTranslateY = Animated.add(translateY, pan);
+
+  const backdropOpacity = translateY.interpolate({
+    inputRange: [numericSnapPoints[0] ?? 0, screenHeight],
     outputRange: [1, 0],
   });
 
-  const sheetTranslateY = Animated.add(
-    progress.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0, sheetHeight],
-    }),
-    pan
-  );
+  const handleLayout = (event: LayoutChangeEvent) => {
+    const height = event.nativeEvent.layout.height;
+    if (fitContentHeight && height !== sheetHeight) {
+      setSheetHeight(height);
+    }
+  };
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={[styles.container, overlayStyle]}
+      style={styles.container}
     >
       <Animated.View
         style={[
           styles.backdrop,
+          overlayStyle,
           { opacity: backdropOpacity, backgroundColor: "rgba(0,0,0,0.5)" },
         ]}
       >
@@ -236,13 +119,17 @@ export function BottomSheet({
 
       <Animated.View
         {...panResponder.panHandlers}
+        onLayout={handleLayout}
         style={[
           styles.sheet,
           {
-            transform: [{ translateY: sheetTranslateY }],
+            backgroundColor,
             borderTopLeftRadius: borderRadius,
             borderTopRightRadius: borderRadius,
-            backgroundColor: backgroundColor ?? "white",
+            transform: [{ translateY: sheetTranslateY }],
+            minHeight: fitContentHeight
+              ? undefined
+              : screenHeight - (numericSnapPoints[0] ?? 0),
           },
         ]}
       >
@@ -263,17 +150,19 @@ const styles = StyleSheet.create({
   },
   sheet: {
     position: "absolute",
-    bottom: 0,
     left: 0,
     right: 0,
-    paddingTop: 10,
+    bottom: 0,
+    paddingTop: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 32,
   },
   handle: {
     width: 40,
     height: 5,
-    backgroundColor: "#aaa",
+    backgroundColor: "#ccc",
     borderRadius: 3,
     alignSelf: "center",
-    marginBottom: 10,
+    marginBottom: 12,
   },
 });
