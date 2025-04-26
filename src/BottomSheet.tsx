@@ -42,23 +42,24 @@ export function BottomSheet({
   const [contentHeight, setContentHeight] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  // Track translateY value properly
+  // Track translateY value
   const translateYValue = useRef(SCREEN_HEIGHT);
 
   // Handle width animation
   const handleWidth = useRef(new Animated.Value(40)).current;
 
+  // Parse snap points
   const parsedSnapPoints = snapPoints.map((point) => {
     if (point.endsWith("%")) {
       const percentage = parseFloat(point.replace("%", ""));
       return SCREEN_HEIGHT - (percentage / 100) * SCREEN_HEIGHT;
     }
-    return SCREEN_HEIGHT / 2;
+    return parseFloat(point) || SCREEN_HEIGHT / 2; // Fallback to half screen
   });
 
   const initialSnap = parsedSnapPoints[0];
 
-  const animateSheet = (toValue: number) => {
+  const animateSheet = (toValue: number, callback?: () => void) => {
     setIsAnimating(true);
     Animated.timing(translateY, {
       toValue,
@@ -67,7 +68,9 @@ export function BottomSheet({
       useNativeDriver: true,
     }).start(() => {
       setIsAnimating(false);
-      pan.setValue(0);
+      pan.setValue(0); // Reset pan after animation
+      translateYValue.current = toValue;
+      callback?.();
     });
   };
 
@@ -81,22 +84,19 @@ export function BottomSheet({
   };
 
   useEffect(() => {
-    // Attach a listener to keep track of translateY value
+    // Update translateYValue when translateY changes
     const id = translateY.addListener(({ value }) => {
       translateYValue.current = value;
     });
-
-    return () => {
-      translateY.removeListener(id);
-    };
+    return () => translateY.removeListener(id);
   }, [translateY]);
 
   useEffect(() => {
     if (fitContentHeight && isOpen && contentHeight === 0) {
-      return; // wait for measuring
+      return; // Wait for content height measurement
     }
     const targetPosition = fitContentHeight
-      ? SCREEN_HEIGHT - contentHeight
+      ? Math.max(SCREEN_HEIGHT - contentHeight, parsedSnapPoints[0]) // Ensure not too high
       : initialSnap;
     animateSheet(isOpen ? targetPosition : SCREEN_HEIGHT);
   }, [isOpen, contentHeight]);
@@ -105,40 +105,42 @@ export function BottomSheet({
 
   const backdropOpacity = sheetTranslateY.interpolate({
     inputRange: [Math.min(...parsedSnapPoints), SCREEN_HEIGHT],
-    outputRange: [1, 0],
+    outputRange: [0.5, 0],
     extrapolate: "clamp",
   });
 
   const panResponder = PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gestureState) =>
-      Math.abs(gestureState.dy) > 5,
+    onMoveShouldSetPanResponder: (_, gestureState) => {
+      // Lower threshold for better responsiveness
+      return Math.abs(gestureState.dy) > 2 || Math.abs(gestureState.dx) > 2;
+    },
     onPanResponderGrant: () => {
       animateHandle(30); // Shrink handle on drag start
+      pan.setValue(0); // Reset pan to avoid jumps
     },
-    onPanResponderMove: (_, gestureState) => {
-      pan.setValue(gestureState.dy);
-    },
+    onPanResponderMove: Animated.event(
+      [null, { dy: pan }], // Bind gesture dy to pan
+      { useNativeDriver: false }
+    ),
     onPanResponderRelease: (_, gestureState) => {
-      animateHandle(40); // Expand handle back on release
-
-      const velocity = gestureState.vy;
-      const movedDistance = gestureState.dy;
+      animateHandle(40); // Expand handle back
+      const { vy: velocity, dy: movedDistance } = gestureState;
       const currentPos = translateYValue.current + movedDistance;
 
       // Fast swipe down to close
-      if (velocity > 1.5 || movedDistance > 150) {
-        toggleSheet(false);
+      if (velocity > 0.7 || (movedDistance > 100 && velocity >= 0)) {
+        animateSheet(SCREEN_HEIGHT, () => toggleSheet(false));
         return;
       }
-      // Fast swipe up to open
-      if (velocity < -1.5) {
+      // Fast swipe up to open fully
+      if (velocity < -0.7) {
         animateSheet(Math.min(...parsedSnapPoints));
         return;
       }
 
-      // Otherwise, snap to nearest point
+      // Snap to nearest point
       let closestSnap = SCREEN_HEIGHT;
-      let minDistance = SCREEN_HEIGHT;
+      let minDistance = Infinity;
       parsedSnapPoints.forEach((snap) => {
         const distance = Math.abs(currentPos - snap);
         if (distance < minDistance) {
@@ -147,13 +149,18 @@ export function BottomSheet({
         }
       });
 
-      animateSheet(closestSnap);
+      // If close to bottom, dismiss
+      if (closestSnap >= SCREEN_HEIGHT - 50) {
+        animateSheet(SCREEN_HEIGHT, () => toggleSheet(false));
+      } else {
+        animateSheet(closestSnap);
+      }
     },
   });
 
   const handleLayout = (event: LayoutChangeEvent) => {
     const height = event.nativeEvent.layout.height;
-    if (fitContentHeight) {
+    if (fitContentHeight && height > 0) {
       setContentHeight(height);
     }
   };
@@ -162,7 +169,7 @@ export function BottomSheet({
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={StyleSheet.absoluteFill}
-      pointerEvents="box-none"
+      pointerEvents={isOpen ? "auto" : "none"}
     >
       {/* Backdrop */}
       {isOpen && (
@@ -174,7 +181,9 @@ export function BottomSheet({
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
             onPress={() => {
-              if (!isAnimating) toggleSheet(false);
+              if (!isAnimating) {
+                animateSheet(SCREEN_HEIGHT, () => toggleSheet(false));
+              }
             }}
           />
         </Animated.View>
@@ -193,19 +202,17 @@ export function BottomSheet({
             transform: [{ translateY: sheetTranslateY }],
             minHeight: fitContentHeight
               ? undefined
-              : SCREEN_HEIGHT - initialSnap,
+              : SCREEN_HEIGHT - Math.min(...parsedSnapPoints),
           },
         ]}
-        pointerEvents="box-none"
+        pointerEvents="auto"
       >
         {/* Handle */}
         <Animated.View
-          style={[
-            styles.handle,
-            { width: handleWidth }, // Dynamic animated width
-          ]}
+          style={[styles.handle, { width: handleWidth }]}
+          {...panResponder.panHandlers} // Allow dragging from handle
         />
-        {children}
+        <View style={styles.content}>{children}</View>
       </Animated.View>
     </KeyboardAvoidingView>
   );
@@ -233,5 +240,8 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     alignSelf: "center",
     marginBottom: 12,
+  },
+  content: {
+    flexShrink: 1, // Prevent content from overflowing
   },
 });
