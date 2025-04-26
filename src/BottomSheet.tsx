@@ -9,6 +9,7 @@ import {
   StyleSheet,
   View,
   LayoutChangeEvent,
+  Easing,
 } from "react-native";
 
 interface BottomSheetProps {
@@ -41,59 +42,112 @@ export function BottomSheet({
   const [contentHeight, setContentHeight] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  const snapValue = snapPoints.length
-    ? SCREEN_HEIGHT -
-      (parseFloat(snapPoints[0].replace("%", "")) / 100) * SCREEN_HEIGHT
-    : SCREEN_HEIGHT / 2;
+  // Track translateY value properly
+  const translateYValue = useRef(SCREEN_HEIGHT);
 
-  const targetPosition = fitContentHeight
-    ? SCREEN_HEIGHT - contentHeight
-    : snapValue;
+  // Handle width animation
+  const handleWidth = useRef(new Animated.Value(40)).current;
 
-  const animateSheet = (open: boolean) => {
+  const parsedSnapPoints = snapPoints.map((point) => {
+    if (point.endsWith("%")) {
+      const percentage = parseFloat(point.replace("%", ""));
+      return SCREEN_HEIGHT - (percentage / 100) * SCREEN_HEIGHT;
+    }
+    return SCREEN_HEIGHT / 2;
+  });
+
+  const initialSnap = parsedSnapPoints[0];
+
+  const animateSheet = (toValue: number) => {
     setIsAnimating(true);
     Animated.timing(translateY, {
-      toValue: open ? targetPosition : SCREEN_HEIGHT,
+      toValue,
       duration: animationDuration,
+      easing: Easing.inOut(Easing.ease),
       useNativeDriver: true,
     }).start(() => {
       setIsAnimating(false);
-      pan.setValue(0); // reset pan
+      pan.setValue(0);
     });
   };
+
+  const animateHandle = (toValue: number) => {
+    Animated.timing(handleWidth, {
+      toValue,
+      duration: 200,
+      useNativeDriver: false,
+      easing: Easing.inOut(Easing.ease),
+    }).start();
+  };
+
+  useEffect(() => {
+    // Attach a listener to keep track of translateY value
+    const id = translateY.addListener(({ value }) => {
+      translateYValue.current = value;
+    });
+
+    return () => {
+      translateY.removeListener(id);
+    };
+  }, [translateY]);
 
   useEffect(() => {
     if (fitContentHeight && isOpen && contentHeight === 0) {
       return; // wait for measuring
     }
-    animateSheet(isOpen);
+    const targetPosition = fitContentHeight
+      ? SCREEN_HEIGHT - contentHeight
+      : initialSnap;
+    animateSheet(isOpen ? targetPosition : SCREEN_HEIGHT);
   }, [isOpen, contentHeight]);
 
-  const backdropOpacity = translateY.interpolate({
-    inputRange: [targetPosition, SCREEN_HEIGHT],
+  const sheetTranslateY = Animated.add(translateY, pan);
+
+  const backdropOpacity = sheetTranslateY.interpolate({
+    inputRange: [Math.min(...parsedSnapPoints), SCREEN_HEIGHT],
     outputRange: [1, 0],
     extrapolate: "clamp",
   });
 
-  const sheetTranslateY = Animated.add(translateY, pan);
-
   const panResponder = PanResponder.create({
     onMoveShouldSetPanResponder: (_, gestureState) =>
       Math.abs(gestureState.dy) > 5,
+    onPanResponderGrant: () => {
+      animateHandle(30); // Shrink handle on drag start
+    },
     onPanResponderMove: (_, gestureState) => {
-      if (gestureState.dy > 0) {
-        pan.setValue(gestureState.dy);
-      }
+      pan.setValue(gestureState.dy);
     },
     onPanResponderRelease: (_, gestureState) => {
-      if (gestureState.dy > 100) {
+      animateHandle(40); // Expand handle back on release
+
+      const velocity = gestureState.vy;
+      const movedDistance = gestureState.dy;
+      const currentPos = translateYValue.current + movedDistance;
+
+      // Fast swipe down to close
+      if (velocity > 1.5 || movedDistance > 150) {
         toggleSheet(false);
-      } else {
-        Animated.spring(pan, {
-          toValue: 0,
-          useNativeDriver: true,
-        }).start();
+        return;
       }
+      // Fast swipe up to open
+      if (velocity < -1.5) {
+        animateSheet(Math.min(...parsedSnapPoints));
+        return;
+      }
+
+      // Otherwise, snap to nearest point
+      let closestSnap = SCREEN_HEIGHT;
+      let minDistance = SCREEN_HEIGHT;
+      parsedSnapPoints.forEach((snap) => {
+        const distance = Math.abs(currentPos - snap);
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestSnap = snap;
+        }
+      });
+
+      animateSheet(closestSnap);
     },
   });
 
@@ -139,12 +193,18 @@ export function BottomSheet({
             transform: [{ translateY: sheetTranslateY }],
             minHeight: fitContentHeight
               ? undefined
-              : SCREEN_HEIGHT - targetPosition,
+              : SCREEN_HEIGHT - initialSnap,
           },
         ]}
         pointerEvents="box-none"
       >
-        <View style={styles.handle} />
+        {/* Handle */}
+        <Animated.View
+          style={[
+            styles.handle,
+            { width: handleWidth }, // Dynamic animated width
+          ]}
+        />
         {children}
       </Animated.View>
     </KeyboardAvoidingView>
@@ -168,7 +228,6 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === "ios" ? 32 : 16,
   },
   handle: {
-    width: 40,
     height: 5,
     backgroundColor: "#ccc",
     borderRadius: 3,
