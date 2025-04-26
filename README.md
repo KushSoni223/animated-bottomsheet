@@ -1,4 +1,4 @@
-# react-native-animated-bottom-sheet
+# react-native-common-bottomsheet
 
 A lightweight, dependency-free Bottom Sheet component for React Native, built without Reanimated or Gesture Handler.
 
@@ -16,11 +16,11 @@ A lightweight, dependency-free Bottom Sheet component for React Native, built wi
 ## 📦 Installation
 
 ```bash
-npm install react-native-animated-bottom-sheet
+npm install react-native-common-bottomsheet
 
 or
 
-yarn add react-native-animated-bottom-sheet
+yarn add react-native-common-bottomsheet
 ```
 
 ### Usage
@@ -28,7 +28,7 @@ yarn add react-native-animated-bottom-sheet
 ```bash
 import React, { useState } from 'react';
 import { Text, Button } from 'react-native';
-import { BottomSheet } from 'react-native-animated-bottom-sheet';
+import { BottomSheet } from 'react-native-common-bottomsheet';
 
 const App = () => {
   const [visible, setVisible] = useState(false);
